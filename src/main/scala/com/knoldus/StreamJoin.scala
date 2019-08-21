@@ -1,11 +1,10 @@
 package com.knoldus
 
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.SparkSession
 
 
 
-object StreamJoin extends App {
+object StreamJoin {
 
   val spark = SparkSession
     .builder
@@ -17,7 +16,9 @@ object StreamJoin extends App {
   val images = spark
     .readStream
     .format("kafka")
-    .option("kafka.bootstrap.servers", "localhost:9092")
+    .option("kafka.bootstrap.servers", "localhost:9193")
+    .option("subscribe", "camerasource")
+    .option("includeTimestamp", value = true)
 
 
 }
