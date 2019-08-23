@@ -4,5 +4,9 @@ import java.sql.Timestamp
 import java.util.UUID
 
 
-case class ImageDetails(cameraId: UUID, imageId: UUID, imageUrl: String, timeStamp: Timestamp)
-case class GpsDetails(cameraId: UUID, gpsId: UUID, lat: Double , lon: Double, timestamp: Timestamp)
+case class ImageDetails(cameraId: String, imageId: String, imageUrl: String, timeStamp: Timestamp) {
+  override def toString: String = s"""{"cameraId":"$cameraId", "imageId":"$imageId", "imageUrl":"$imageUrl", "timestamp":"$timeStamp"}"""
+}
+
+
+case class GpsDetails(cameraId: String, gpsId: String, lat: Double , lon: Double, timestamp: Timestamp)

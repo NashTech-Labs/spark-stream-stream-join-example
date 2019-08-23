@@ -7,17 +7,20 @@ import java.util.UUID
 import com.knoldus.api.StreamToStreamJoin
 import com.knoldus.model.ImageDetails
 import net.manub.embeddedkafka.{EmbeddedKafka, EmbeddedKafkaConfig}
-import org.apache.spark.sql.{Dataset, SparkSession}
+import org.apache.kafka.common.serialization.StringSerializer
+import org.apache.spark.sql.SparkSession
 import org.scalatest.WordSpec
 
 class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
+  implicit val serializer = new StringSerializer()
 
   def publishImagesToKafka = {
-    1 to 100 map { recordNum =>
-      val uuid = UUID.randomUUID()
+    1 to 100 foreach { recordNum =>
+      val uuid = UUID.randomUUID().toString
       //TODO Add Serializer and dser
-      publishToKafka("camerasource", ImageDetails(uuid, uuid, recordNum.toString, Timestamp.from(Instant.ofEpochMilli(recordNum))))
+      val imageDetails = ImageDetails(uuid, uuid, recordNum.toString, Timestamp.from(Instant.ofEpochMilli(recordNum)))
+      publishToKafka("camerasource", ImageDetails.toString)
     }
   }
 
