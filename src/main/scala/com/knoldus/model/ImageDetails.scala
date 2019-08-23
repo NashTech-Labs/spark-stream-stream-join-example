@@ -9,4 +9,6 @@ case class ImageDetails(cameraId: String, imageId: String, imageUrl: String, tim
 }
 
 
-case class GpsDetails(cameraId: String, gpsId: String, lat: Double , lon: Double, timestamp: Timestamp)
+case class GpsDetails(cameraId: String, gpsId: String, lat: Double , lon: Double, timestamp: Timestamp) {
+  override def toString: String = s"""{"cameraId":"$cameraId", "gpsId":"$gpsId", "lat":"$lat", "timestamp":"$timestamp"}"""
+}

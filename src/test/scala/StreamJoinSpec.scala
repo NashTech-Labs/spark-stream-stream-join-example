@@ -5,7 +5,7 @@ import java.time.Instant
 import java.util.UUID
 
 import com.knoldus.api.StreamToStreamJoin
-import com.knoldus.model.ImageDetails
+import com.knoldus.model.{GpsDetails, ImageDetails}
 import net.manub.embeddedkafka.{EmbeddedKafka, EmbeddedKafkaConfig}
 import org.apache.kafka.common.serialization.StringSerializer
 import org.apache.spark.sql.SparkSession
@@ -19,8 +19,17 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
     1 to 100 foreach { recordNum =>
       val uuid = UUID.randomUUID().toString
       //TODO Add Serializer and dser
-      val imageDetails = ImageDetails(uuid, uuid, recordNum.toString, Timestamp.from(Instant.ofEpochMilli(recordNum)))
-      publishToKafka("camerasource", ImageDetails.toString)
+      val imageDetails = ImageDetails(uuid, uuid, recordNum.toString, Timestamp.from(Instant.ofEpochSecond(recordNum)))
+      publishToKafka("camerasource", imageDetails.toString)
+    }
+  }
+
+  def publishGPSDataToKafka = {
+    1 to 100000 by 100 foreach { recordNum =>
+      val uuid = UUID.randomUUID().toString
+      //TODO Add Serializer and dser
+      val gpsDetails = GpsDetails(uuid, uuid, recordNum, recordNum, Timestamp.from(Instant.ofEpochMilli(recordNum)))
+      publishToKafka("gpssource", gpsDetails.toString)
     }
   }
 
@@ -41,8 +50,8 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
         implicit val config = EmbeddedKafkaConfig(kafkaPort = 9193)
 
-        //TODO Publish required records before aggregating
         publishImagesToKafka
+        publishGPSDataToKafka
 
         val imagesDf = testSession
           .readStream
