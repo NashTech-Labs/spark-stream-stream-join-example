@@ -1,7 +1,6 @@
 package com.knoldus.model
 
 import java.sql.Timestamp
-import java.util.UUID
 
 
 case class ImageDetails(cameraId: String, imageId: String, imageUrl: String, timeStamp: Timestamp) {
