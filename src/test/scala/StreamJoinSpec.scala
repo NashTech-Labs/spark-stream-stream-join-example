@@ -9,27 +9,28 @@ import com.knoldus.model.{GpsDetails, ImageDetails}
 import net.manub.embeddedkafka.EmbeddedKafka
 import org.apache.kafka.common.serialization
 import org.apache.kafka.common.serialization.StringSerializer
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{Encoder, Encoders, SparkSession}
 import org.scalatest.WordSpec
 
 class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
   implicit val serializer = new StringSerializer()
 
-  def publishImagesToKafka = {
-    1 to 10 foreach { recordNum =>
-      val uuid = UUID.randomUUID().toString
+  def publishImagesToKafka(start: Int, end: Int) = {
+    start to end foreach { recordNum =>
       //TODO Add Serializer and dser
-      val imageDetails = ImageDetails(uuid, uuid, recordNum.toString, Timestamp.from(Instant.ofEpochSecond(recordNum)))
+      val imageDetails = ImageDetails(recordNum.toString, recordNum.toString, recordNum.toString, Timestamp.from(Instant.ofEpochSecond(recordNum)))
       publishToKafka("camerasource", imageDetails.toString)
     }
   }
 
-  def publishGPSDataToKafka = {
-    1 to 10000 by 100 foreach { recordNum =>
+  def publishGPSDataToKafka(start: Int, end: Int, interval: Int) = {
+    start to end by interval foreach { recordNum =>
       val uuid = UUID.randomUUID().toString
       //TODO Add Serializer and dser
-      val gpsDetails = GpsDetails(uuid, uuid, recordNum, recordNum, Timestamp.from(Instant.ofEpochMilli(recordNum)))
+      val gpsDetails = GpsDetails((recordNum%10).toString, recordNum.toString, recordNum.toDouble, recordNum.toDouble, Timestamp.from(Instant.ofEpochMilli(recordNum)))
       publishToKafka("gpssource", gpsDetails.toString)
     }
   }
@@ -46,7 +47,6 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
           .getOrCreate()
 
       val sc = testSession.sparkContext
-
       sc.setLogLevel("WARN")
 
       val sut = new StreamToStreamJoin(testSession)
@@ -57,30 +57,74 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
           .format("kafka")
           .option("kafka.bootstrap.servers", "localhost:6001")
           .option("subscribe", "camerasource")
+          .option("startingOffsets", "earliest")
           .option("checkpointLocation", "/home/knoldus/")
           .load()
 
-        val df = imagesDf.selectExpr("CAST(value AS STRING)").groupBy("value").count()
-
-
-        val query =
-        df.writeStream
-            .outputMode("Update")
+        val gpssDf = testSession
+          .readStream
           .format("kafka")
           .option("kafka.bootstrap.servers", "localhost:6001")
-          .option("topic", "testoutput")
+          .option("subscribe", "gpssource")
           .option("checkpointLocation", "/home/knoldus/")
+          .load()
+
+        implicit val imageEncoder: Encoder[ImageDetails] = Encoders.product[ImageDetails]
+        implicit val gpsEncoder: Encoder[GpsDetails] = Encoders.product[GpsDetails]
+
+        val imagesSchema = StructType(
+          Seq(
+            StructField("cameraId", StringType),
+            StructField("imageId", StringType),
+            StructField("imageUrl", StringType),
+            StructField("timestamp", TimestampType)
+          )
+        )
+
+        val gpsSchema = StructType(
+          Seq(
+            StructField("gpscameraId", StringType),
+            StructField("gpsId", StringType),
+            StructField("lat", DoubleType),
+            StructField("lon", DoubleType),
+            StructField("gpsTimestamp", TimestampType)
+          )
+        )
+
+        val imageDf = imagesDf.select(from_json(column("value").cast(StringType), imagesSchema).as[ImageDetails])
+        val gpsDf = gpssDf.select(from_json(column("value").cast(StringType), gpsSchema).as[GpsDetails])
+
+
+        val resultDf = imageDf.join(
+          gpsDf,
+          expr(
+            """
+              cameraId = gpscameraId
+            """.stripMargin)
+        )
+
+        val query =
+          resultDf.writeStream
+          .outputMode("append")
+          .format("console")
+          /*.option("kafka.bootstrap.servers", "localhost:6001")
+          .option("topic", "testoutput")
+          .option("checkpointLocation", "/home/knoldus/")*/
           .start()
 
-        publishImagesToKafka
+        publishImagesToKafka(1,10)
 
-        query.awaitTermination(5000)
+        Thread.sleep(2000)
 
-       // publishGPSDataToKafka
+        publishGPSDataToKafka(1,10000, 100)
+
+        query.awaitTermination(50000)
+
 
         implicit val deserializer = new serialization.StringDeserializer()
+        val ret = consumeFirstMessageFrom("gpssource")
 
-        consumeFirstMessageFrom("testoutput").contains("cameraId")
+        println(s"The published topic :::::::$ret")
       }
 
     }
