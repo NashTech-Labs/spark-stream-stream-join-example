@@ -15,7 +15,6 @@ import org.apache.spark.sql.{Encoder, Encoders, SparkSession}
 import org.scalatest.WordSpec
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import org.apache.spark.sql.functions.{col, udf}
 
 class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
@@ -24,7 +23,7 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
   def publishImagesToKafka(start: Int, end: Int) = {
     start to end foreach { recordNum =>
       //TODO Add Serializer and dser
-      val imageDetails = ImageDetails(recordNum.toString, recordNum.toString, recordNum.toString, Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())))
+      val imageDetails = ImageDetails((recordNum % 4).toString, recordNum.toString, recordNum.toString, Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())))
       publishToKafka("camerasource", imageDetails.toString)
       Thread.sleep(1000)
     }
@@ -32,9 +31,8 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
   def publishGPSDataToKafka(start: Int, end: Int) = {
     start to end foreach { recordNum =>
-      val uuid = UUID.randomUUID().toString
       //TODO Add Serializer and dser
-      val gpsDetails = GpsDetails((recordNum%10).toString, recordNum.toString, recordNum.toDouble, recordNum.toDouble, Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())))
+      val gpsDetails = GpsDetails((recordNum%4).toString, recordNum.toString, recordNum.toDouble, recordNum.toDouble, Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())))
       publishToKafka("gpssource", gpsDetails.toString)
       Thread.sleep(100)
     }
@@ -106,7 +104,7 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
           expr(
             """
               cameraId = gpscameraId AND
-              abs(time_in_milliseconds(timestamp) - time_in_milliseconds(gpsTimestamp)) <= 9000
+              abs(time_in_milliseconds(timestamp) - time_in_milliseconds(gpsTimestamp)) <= 500
             """.stripMargin)
         )
 
