@@ -99,14 +99,7 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
         testSession.udf.register("time_in_milliseconds", (str:String) => Timestamp.valueOf(str).getTime)
 
-        val joinedDef = imageDf.join(
-          gpsDf,
-          expr(
-            """
-              cameraId = gpscameraId AND
-              abs(time_in_milliseconds(timestamp) - time_in_milliseconds(gpsTimestamp)) <= 500
-            """.stripMargin)
-        )
+        val joinedDef = new StreamToStreamJoin(testSession).aggregateOnWindow(imageDf, gpsDf, 500)
 
         val query =
           joinedDef.select("cameraId", "timeStamp", "gpsTimeStamp")
