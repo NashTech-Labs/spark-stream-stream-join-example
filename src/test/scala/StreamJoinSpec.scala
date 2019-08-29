@@ -13,6 +13,9 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{Encoder, Encoders, SparkSession}
 import org.scalatest.WordSpec
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+import org.apache.spark.sql.functions.{col, udf}
 
 class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
@@ -21,17 +24,19 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
   def publishImagesToKafka(start: Int, end: Int) = {
     start to end foreach { recordNum =>
       //TODO Add Serializer and dser
-      val imageDetails = ImageDetails(recordNum.toString, recordNum.toString, recordNum.toString, Timestamp.from(Instant.ofEpochSecond(recordNum)))
+      val imageDetails = ImageDetails(recordNum.toString, recordNum.toString, recordNum.toString, Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())))
       publishToKafka("camerasource", imageDetails.toString)
+      Thread.sleep(1000)
     }
   }
 
-  def publishGPSDataToKafka(start: Int, end: Int, interval: Int) = {
-    start to end by interval foreach { recordNum =>
+  def publishGPSDataToKafka(start: Int, end: Int) = {
+    start to end foreach { recordNum =>
       val uuid = UUID.randomUUID().toString
       //TODO Add Serializer and dser
-      val gpsDetails = GpsDetails((recordNum%10).toString, recordNum.toString, recordNum.toDouble, recordNum.toDouble, Timestamp.from(Instant.ofEpochMilli(recordNum)))
+      val gpsDetails = GpsDetails((recordNum%10).toString, recordNum.toString, recordNum.toDouble, recordNum.toDouble, Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())))
       publishToKafka("gpssource", gpsDetails.toString)
+      Thread.sleep(100)
     }
   }
 
@@ -94,32 +99,37 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
         val imageDf = imagesDf.select(from_json(column("value").cast(StringType), imagesSchema).as[ImageDetails])
         val gpsDf = gpssDf.select(from_json(column("value").cast(StringType), gpsSchema).as[GpsDetails])
 
+        testSession.udf.register("time_in_milliseconds", (str:String) => Timestamp.valueOf(str).getTime)
 
-        val resultDf = imageDf.join(
+        val joinedDef = imageDf.join(
           gpsDf,
           expr(
             """
-              cameraId = gpscameraId
+              cameraId = gpscameraId AND
+              abs(time_in_milliseconds(timestamp) - time_in_milliseconds(gpsTimestamp)) <= 9000
             """.stripMargin)
         )
 
         val query =
-          resultDf.writeStream
-          .outputMode("append")
-          .format("console")
-          /*.option("kafka.bootstrap.servers", "localhost:6001")
-          .option("topic", "testoutput")
-          .option("checkpointLocation", "/home/knoldus/")*/
-          .start()
+          joinedDef.select("cameraId", "timeStamp", "gpsTimeStamp")
+            .writeStream
+            .outputMode("append")
+            .option("truncate", "false")
+            .format("console")
+            /*.option("kafka.bootstrap.servers", "localhost:6001")
+            .option("topic", "testoutput")
+            .option("checkpointLocation", "/home/knoldus/")*/
+            .start()
 
-        publishImagesToKafka(1,10)
+        Future {
+          publishImagesToKafka(1,1000)
+        }
 
-        Thread.sleep(2000)
+        Future {
+          publishGPSDataToKafka(1,10000)
+        }
 
-        publishGPSDataToKafka(1,10000, 100)
-
-        query.awaitTermination(50000)
-
+        query.awaitTermination()
 
         implicit val deserializer = new serialization.StringDeserializer()
         val ret = consumeFirstMessageFrom("gpssource")
