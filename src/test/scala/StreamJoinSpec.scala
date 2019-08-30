@@ -101,17 +101,19 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
         val joinedDef = new StreamToStreamJoin(testSession).aggregateOnWindow(imageDf, gpsDf, 500)
 
+        joinedDef.printSchema()
+
+
         val query =
-          joinedDef.select("cameraId", "timeStamp", "gpsTimeStamp")
+          joinedDef.select( "ImageId", "timestamp", "nearest" )
             .writeStream
-            .outputMode("append")
+            .outputMode("Append")
             .option("truncate", "false")
             .format("console")
             /*.option("kafka.bootstrap.servers", "localhost:6001")
             .option("topic", "testoutput")
             .option("checkpointLocation", "/home/knoldus/")*/
             .start()
-
         Future {
           publishImagesToKafka(1, 1000)
         }

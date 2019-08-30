@@ -3,19 +3,24 @@ package com.knoldus.api
 import java.sql.Timestamp
 
 import com.knoldus.model.{GpsDetails, ImageDetails}
-import org.apache.spark.sql.functions.expr
-import org.apache.spark.sql.{Dataset, Row, SparkSession}
+import org.apache.spark.sql._
+import org.apache.spark.sql.functions._
 
 class StreamToStreamJoin(spark: SparkSession) {
-  def aggregateOnWindow(imageStream: Dataset[ImageDetails], gpsDetails: Dataset[GpsDetails], window: Long): Dataset[Row] = {
+
+  def aggregateOnWindow(imageStream: Dataset[ImageDetails], gpsDetails: Dataset[GpsDetails], win: Long) = {
     spark.udf.register("time_in_milliseconds", (str: String) => Timestamp.valueOf(str).getTime)
-    imageStream.join(
-      gpsDetails,
+    imageStream.withWatermark("timestamp", "2 seconds").join(
+      gpsDetails.withWatermark("gpsTimestamp", "2 seconds"),
       expr(
         s"""
             cameraId = gpscameraId AND
-            abs(time_in_milliseconds(timestamp) - time_in_milliseconds(gpsTimestamp)) <= $window
+            abs(time_in_milliseconds(timestamp) - time_in_milliseconds(gpsTimestamp)) <= $win
             """.stripMargin)
-    )
+    ).selectExpr("ImageId", "timestamp", "gpsTimestamp", "(time_in_milliseconds(gpsTimestamp) - time_in_milliseconds(timestamp)) as diff")
+      .withWatermark("timestamp", "1 seconds")
+      .groupBy("ImageId", "timestamp")
+      .agg(min("diff")).withColumnRenamed("min(diff)", "nearest")
+
   }
 }
