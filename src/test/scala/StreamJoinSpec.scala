@@ -111,7 +111,7 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
             .option("truncate", "false")
             .format("console")
             /*.option("kafka.bootstrap.servers", "localhost:6001")
-            .option("topic", "testoutput")
+            .option("topic", "output")
             .option("checkpointLocation", "/home/knoldus/")*/
             .start()
         Future {
