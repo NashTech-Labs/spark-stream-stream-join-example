@@ -13,8 +13,10 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.{Encoder, Encoders, SparkSession}
 import org.scalatest.WordSpec
 
+
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
 
 class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
@@ -40,19 +42,20 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
   "StreamToStreamJoin" should {
 
-    "aggregateOnWindow for a duration of 10 seconds" in {
+    val testSession =
+      SparkSession
+        .builder()
+        .appName("StreamToStreamJoinTest")
+        .master("local")
+        .getOrCreate()
 
-      val testSession =
-        SparkSession
-          .builder()
-          .appName("StreamToStreamJoinTest")
-          .master("local")
-          .getOrCreate()
+    val sc = testSession.sparkContext
+    sc.setLogLevel("WARN")
 
-      val sc = testSession.sparkContext
-      sc.setLogLevel("WARN")
+    //sut = system under test
+    val sut = new StreamToStreamJoin(testSession)
 
-      val sut = new StreamToStreamJoin(testSession)
+    /*"should find nearest frame with relevant timestamp" in {
 
       withRunningKafka {
         val imagesDf = testSession
@@ -99,7 +102,7 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
 
         testSession.udf.register("time_in_milliseconds", (str: String) => Timestamp.valueOf(str).getTime)
 
-        val joinedDef = new StreamToStreamJoin(testSession).aggregateOnWindow(imageDf, gpsDf, 500)
+        val joinedDef = new StreamToStreamJoin(testSession).findNearest(imageDf, gpsDf, 500)
 
         joinedDef.printSchema()
 
@@ -130,8 +133,52 @@ class StreamJoinSpec extends WordSpec with EmbeddedKafka {
         println(s"The published topic :::::::$ret")
       }
 
-    }
+    }*/
 
+    "should aggregate images into a 10 seconds" in {
+
+      withRunningKafka {
+        val imagesDf = testSession
+          .readStream
+          .format("kafka")
+          .option("kafka.bootstrap.servers", "localhost:6001")
+          .option("subscribe", "camerasource")
+          .option("startingOffsets", "earliest")
+          .option("checkpointLocation", "/home/knoldus/")
+          .load()
+
+        val imagesSchema = StructType(
+          Seq(
+            StructField("cameraId", StringType),
+            StructField("imageId", StringType),
+            StructField("imageUrl", StringType),
+            StructField("timestamp", TimestampType)
+          )
+        )
+
+        implicit val imageEncoder: Encoder[ImageDetails] = Encoders.product[ImageDetails]
+        val imageDf = imagesDf.select(from_json(column("value").cast(StringType), imagesSchema).as[ImageDetails])
+        val outputdf = sut.aggregatedWindow(imageDf, "10 seconds")
+
+        val query =
+          outputdf.select( "window", "collect_list(ImageId)")
+            .writeStream
+            .outputMode("Append")
+            .option("truncate", "false")
+            .format("console")
+            /*.option("kafka.bootstrap.servers", "localhost:6001")
+            .option("topic", "output")
+            .option("checkpointLocation", "/home/knoldus/")*/
+            .start()
+        outputdf.printSchema()
+
+        val res = Future {
+          publishImagesToKafka(1, 1000)
+        }
+
+        Await.result(res, Duration.Inf)
+      }
+    }
   }
 
 }
